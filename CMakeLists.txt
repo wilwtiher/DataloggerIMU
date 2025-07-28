@@ -23,17 +23,20 @@ project(DataloggerIMU C CXX ASM)
 pico_sdk_init()
 
 
-add_subdirectory(lib/FatFs_SPI)    
+add_subdirectory(lib/FatFs_SPI)   
+include_directories( ${CMAKE_SOURCE_DIR}/lib ) # Inclui os files .h na pasta lib 
 
 add_executable(${PROJECT_NAME}  
         DataloggerIMU.c
         hw_config.c
+        lib/ssd1306.c     
         )
 
     
 
 target_link_libraries(${PROJECT_NAME} 
         pico_stdlib 
+        hardware_i2c
         FatFs_SPI
         hardware_clocks
         hardware_adc
