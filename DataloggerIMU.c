@@ -36,8 +36,13 @@
 // Endereço padrão do MPU6050 (IMU)
 static int addr = 0x68;
 
+#define led_RED 13   // Red=13, Blue=12, Green=11
+#define led_BLUE 12  // Red=13, Blue=12, Green=11
+#define led_GREEN 11 // Red=13, Blue=12, Green=11
+
 #define ADC_PIN 26 // GPIO 26
 
+uint amostras = 1;
 bool estava = true; // true = montar, false = desmontar
 bool desmontar = false;
 bool montar = false;
@@ -53,7 +58,7 @@ float ax;
 float ay;
 float az;
 
-static char filename[20] = "adc_data1.txt";
+static char filename[20] = "adc_data0.txt";
 
 // Função para resetar o MPU6050
 static void mpu6050_reset()
@@ -210,12 +215,18 @@ static void run_mount()
     if (!p_fs)
     {
         printf("Unknown logical drive number: \"%s\"\n", arg1);
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     FRESULT fr = f_mount(p_fs, arg1, 1);
     if (FR_OK != fr)
     {
         printf("f_mount error: %s (%d)\n", FRESULT_str(fr), fr);
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     sd_card_t *pSD = sd_get_by_name(arg1);
@@ -232,12 +243,18 @@ static void run_unmount()
     if (!p_fs)
     {
         printf("Unknown logical drive number: \"%s\"\n", arg1);
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     FRESULT fr = f_unmount(arg1);
     if (FR_OK != fr)
     {
         printf("f_unmount error: %s (%d)\n", FRESULT_str(fr), fr);
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     sd_card_t *pSD = sd_get_by_name(arg1);
@@ -256,12 +273,18 @@ static void run_getfree()
     if (!p_fs)
     {
         printf("Unknown logical drive number: \"%s\"\n", arg1);
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     FRESULT fr = f_getfree(arg1, &fre_clust, &p_fs);
     if (FR_OK != fr)
     {
         printf("f_getfree error: %s (%d)\n", FRESULT_str(fr), fr);
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     tot_sect = (p_fs->n_fatent - 2) * p_fs->csize;
@@ -353,10 +376,13 @@ void capture_adc_data_and_save()
     if (res != FR_OK)
     {
         printf("\n[ERRO] Não foi possível abrir o arquivo para escrita. Monte o Cartao.\n");
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, true);
         return;
     }
     char buffer[50];
-    sprintf(buffer, "%d %d %d %d %d %d %d %d %d %d %d %d\n", 1, gx, 2, gy, 3, gz, 4, ax, 5, ay, 6, az);
+    sprintf(buffer, "%d %d %d %d %d %d %d %d %d %d %d %d %d\n", amostras, 1, gx, 2, gy, 3, gz, 4, ax, 5, ay, 6, az);
     UINT bw;
     res = f_write(&file, buffer, strlen(buffer), &bw);
     if (res != FR_OK)
@@ -365,7 +391,6 @@ void capture_adc_data_and_save()
         f_close(&file);
         return;
     }
-    sleep_ms(100);
     f_close(&file);
     printf("\nDados do ADC salvos no arquivo %s.\n\n", filename);
 }
@@ -514,7 +539,6 @@ static void process_stdio(int cRxedChar)
 
 int main()
 {
-    uint amostras = 0;
     // Para ser utilizado o modo BOOTSEL com botão B
     gpio_init(botaoB);
     gpio_set_dir(botaoB, GPIO_IN);
@@ -525,6 +549,15 @@ int main()
     gpio_set_dir(botaoA, GPIO_IN);
     gpio_pull_up(botaoA);
     gpio_set_irq_enabled_with_callback(botaoA, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
+
+    gpio_init(led_RED);
+    gpio_set_dir(led_RED, GPIO_OUT);
+    gpio_init(led_BLUE);
+    gpio_set_dir(led_BLUE, GPIO_OUT);
+    gpio_init(led_GREEN);
+    gpio_set_dir(led_GREEN, GPIO_OUT);
+    gpio_put(led_RED, true);
+    gpio_put(led_GREEN, true);
 
     stdio_init_all();
     sleep_ms(5000);
@@ -564,6 +597,7 @@ int main()
     char str_giro_y[5];                   // String para giroscópio Y
     char str_giro_z[5];                   // String para giroscópio Z
     char str_amostras[6];                 // String para quantidade de amostras
+    char salvando[1];                 // String para quantidade de amostras
 
     printf("FatFS SPI example\n");
     printf("\033[2J\033[H"); // Limpa tela
@@ -578,8 +612,12 @@ int main()
     ssd1306_fill(&ssd, !cor);                        // Limpa o display
     ssd1306_draw_string(&ssd, "inicializado", 8, 6); // Escreve texto no display
     ssd1306_send_data(&ssd);                         // Atualiza o display
+    gpio_put(led_RED, false);
     while (true)
     {
+        gpio_put(led_RED, true);
+        gpio_put(led_GREEN, false);
+        gpio_put(led_BLUE, false);
         // Lê dados de aceleração, giroscópio e temperatura do MPU6050
         mpu6050_read_raw(aceleracao, gyro, &temp);
         // --- Cálculos para Giroscópio ---
@@ -594,7 +632,8 @@ int main()
         sprintf(str_acel_x, "%d", aceleracao[0]);          // Converte aceleração X para string
         sprintf(str_acel_y, "%d", aceleracao[1]);          // Converte aceleração Y para string
         sprintf(str_acel_z, "%d", aceleracao[2]);          // Converte aceleração Z para string
-        sprintf(str_amostras, "%d", amostras);             // Converte aceleração Z para string
+        sprintf(str_amostras, "%d", amostras);             // Converte amostras para string
+        sprintf(salvando, "%d", captura);             // Converte salvando para string
 
         // Atualiza o conteúdo do display com informações e gráficos
         ssd1306_fill(&ssd, !cor);                            // Limpa o display
@@ -603,7 +642,8 @@ int main()
         ssd1306_line(&ssd, 3, 37, 123, 37, cor);             // Desenha outra linha horizontal
         ssd1306_draw_string(&ssd, "Amostras:", 8, 6);        // Escreve texto no display
         ssd1306_draw_string(&ssd, str_amostras, 30, 6);      // Exibe amostras
-        ssd1306_draw_string(&ssd, "EMBARCATECH", 20, 16);    // Escreve texto no display
+        ssd1306_draw_string(&ssd, "Salvando:", 8, 16);    // Escreve texto no display
+        ssd1306_draw_string(&ssd, salvando, 30, 16);      // Exibe amostras
         ssd1306_draw_string(&ssd, "IMU    MPU6050", 10, 28); // Escreve texto no display
         ssd1306_line(&ssd, 63, 25, 63, 60, cor);             // Desenha uma linha vertical
         ssd1306_draw_string(&ssd, str_tmp, 14, 41);          // Exibe temperatura
@@ -611,13 +651,14 @@ int main()
         ssd1306_draw_string(&ssd, str_acel_y, 73, 41);       // Exibe aceleração Y
         ssd1306_draw_string(&ssd, str_acel_z, 73, 52);       // Exibe aceleração Z
         ssd1306_send_data(&ssd);                             // Atualiza o display
-
-        int cRxedChar = getchar_timeout_us(0);
-        if (PICO_ERROR_TIMEOUT != cRxedChar)
-            process_stdio(cRxedChar);
-
+        gpio_put(led_RED, false);
+        gpio_put(led_GREEN, true);
+        gpio_put(led_BLUE, false);
         if (montar) // Monta o SD card se a bool de montar for acionada
         {
+            gpio_put(led_RED, true);
+            gpio_put(led_GREEN, true);
+            gpio_put(led_BLUE, false);
             montar = false;
             ssd1306_fill(&ssd, !cor);                         // Limpa o display
             ssd1306_draw_string(&ssd, "Montando o SD", 8, 6); // Escreve texto no display
@@ -627,6 +668,9 @@ int main()
         }
         if (desmontar) // Desmonta o SD card se a bool de desmontar for acionada
         {
+            gpio_put(led_RED, true);
+            gpio_put(led_GREEN, true);
+            gpio_put(led_BLUE, false);
             desmontar = false;
             ssd1306_fill(&ssd, !cor);                            // Limpa o display
             ssd1306_draw_string(&ssd, "Desmontando o SD", 8, 6); // Escreve texto no display
@@ -634,42 +678,26 @@ int main()
             printf("\nDesmontando o SD. Aguarde...\n");
             run_unmount();
         }
-        if (cRxedChar == 'c') // Lista diretórios e os arquivos se pressionar 'c'
+        if (captura)
         {
-            printf("\nListagem de arquivos no cartão SD.\n");
-            run_ls();
-            printf("\nListagem concluída.\n");
-            printf("\nEscolha o comando (h = help):  ");
-        }
-        if (cRxedChar == 'd') // Exibe o conteúdo do arquivo se pressionar 'd'
-        {
-            read_file(filename);
-            printf("Escolha o comando (h = help):  ");
-        }
-        if (cRxedChar == 'e') // Obtém o espaço livre no SD card se pressionar 'e'
-        {
-            printf("\nObtendo espaço livre no SD.\n\n");
-            run_getfree();
-            printf("\nEspaço livre obtido.\n");
-            printf("\nEscolha o comando (h = help):  ");
-        }
-        if (cRxedChar == 'f') // Captura dados do ADC e salva no arquivo se pressionar 'f'
-        {
+            gpio_put(led_RED, false);
+            gpio_put(led_GREEN, false);
+            gpio_put(led_BLUE, true);
+            ssd1306_fill(&ssd, !cor);                            // Limpa o display
+            ssd1306_draw_string(&ssd, "Salvando amostra", 8, 6); // Escreve texto no display
+            ssd1306_send_data(&ssd);
             capture_adc_data_and_save();
-            printf("\nEscolha o comando (h = help):  ");
+            amostras = amostras + 1;
+            ssd1306_fill(&ssd, !cor);                         // Limpa o display
+            ssd1306_draw_string(&ssd, "Amostra salva", 8, 6); // Escreve texto no display
+            ssd1306_send_data(&ssd);
+            sleep_ms(150);
+            gpio_put(led_RED, false);
+            gpio_put(led_GREEN, false);
+            gpio_put(led_BLUE, false);
         }
-        if (cRxedChar == 'g') // Formata o SD card se pressionar 'g'
-        {
-            printf("\nProcesso de formatação do SD iniciado. Aguarde...\n");
-            run_format();
-            printf("\nFormatação concluída.\n\n");
-            printf("\nEscolha o comando (h = help):  ");
-        }
-        if (cRxedChar == 'h') // Exibe os comandos disponíveis se pressionar 'h'
-        {
-            run_help();
-        }
-        sleep_ms(500);
+
+        sleep_ms(350);
     }
     return 0;
 }
