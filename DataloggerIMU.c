@@ -42,7 +42,7 @@ static int addr = 0x68;
 
 #define ADC_PIN 26 // GPIO 26
 
-uint amostras = 1;
+int16_t aceleracao[3], gyro[3], temp; // Variáveis para armazenar os dados lidos do MPU6050
 bool estava = true; // true = montar, false = desmontar
 bool desmontar = false;
 bool montar = false;
@@ -58,7 +58,7 @@ float ax;
 float ay;
 float az;
 
-static char filename[20] = "adc_data0.txt";
+static char filename[20] = "adc_data0.csv";
 
 // Função para resetar o MPU6050
 static void mpu6050_reset()
@@ -381,16 +381,40 @@ void capture_adc_data_and_save()
         gpio_put(led_BLUE, true);
         return;
     }
-    char buffer[50];
-    sprintf(buffer, "%d %d %d %d %d %d %d %d %d %d %d %d %d\n", amostras, 1, gx, 2, gy, 3, gz, 4, ax, 5, ay, 6, az);
-    UINT bw;
-    res = f_write(&file, buffer, strlen(buffer), &bw);
-    if (res != FR_OK)
+    char buffer[90];
+        printf("Tentando salvar dados no arquivo...\n");
+        sprintf(buffer, "amostra,eixoX,eixoY,eixoZ,aceleracaoX,aceleracaoY,aceleracaoZ\n");
+        UINT bw;
+        res = f_write(&file, buffer, strlen(buffer), &bw);
+        printf("Dados salvos...\n");
+    for (int i = 0; i < 100; i++)
     {
-        printf("[ERRO] Não foi possível escrever no arquivo. Monte o Cartao.\n");
-        f_close(&file);
-        return;
+        // Lê dados de aceleração, giroscópio e temperatura do MPU6050
+        mpu6050_read_raw(aceleracao, gyro, &temp);
+        // --- Cálculos para Giroscópio ---
+        gx = (float)gyro[0];
+        gy = (float)gyro[1];
+        gz = (float)gyro[2];
+        // --- Cálculos para Acelerômetro (Pitch/Roll) ---
+        ax = aceleracao[0] / 16384.0f; // Escala para 'g'
+        ay = aceleracao[1] / 16384.0f;
+        az = aceleracao[2] / 16384.0f;
+
+        char buffer[90];
+        printf("Tentando salvar dados no arquivo...\n");
+        sprintf(buffer, "%d,%f,%f,%f,%f,%f,%f\n", i + 1, gx, gy, gz, ax, ay, az);
+        UINT bw;
+        res = f_write(&file, buffer, strlen(buffer), &bw);
+        printf("Dados salvos...\n");
+        if (res != FR_OK)
+        {
+            printf("[ERRO] Não foi possível escrever no arquivo. Monte o Cartao.\n");
+            f_close(&file);
+            return;
+        }
+        sleep_ms(200);
     }
+    captura = !captura;
     f_close(&file);
     printf("\nDados do ADC salvos no arquivo %s.\n\n", filename);
 }
@@ -588,7 +612,6 @@ int main()
     bi_decl(bi_2pins_with_func(I2C_SDA, I2C_SCL, GPIO_FUNC_I2C));
     mpu6050_reset();
 
-    int16_t aceleracao[3], gyro[3], temp; // Variáveis para armazenar os dados lidos do MPU6050
     char str_tmp[5];                      // String para a temperatura
     char str_acel_x[5];                   // String para aceleração X
     char str_acel_y[5];                   // String para aceleração Y
@@ -596,8 +619,7 @@ int main()
     char str_giro_x[5];                   // String para giroscópio X
     char str_giro_y[5];                   // String para giroscópio Y
     char str_giro_z[5];                   // String para giroscópio Z
-    char str_amostras[6];                 // String para quantidade de amostras
-    char salvando[1];                 // String para quantidade de amostras
+    char salvando[1];                     // String para quantidade de amostras
 
     printf("FatFS SPI example\n");
     printf("\033[2J\033[H"); // Limpa tela
@@ -621,19 +643,18 @@ int main()
         // Lê dados de aceleração, giroscópio e temperatura do MPU6050
         mpu6050_read_raw(aceleracao, gyro, &temp);
         // --- Cálculos para Giroscópio ---
-        float gx = (float)gyro[0];
-        float gy = (float)gyro[1];
-        float gz = (float)gyro[2];
+        gx = (float)gyro[0];
+        gy = (float)gyro[1];
+        gz = (float)gyro[2];
         // --- Cálculos para Acelerômetro (Pitch/Roll) ---
-        float ax = aceleracao[0] / 16384.0f; // Escala para 'g'
-        float ay = aceleracao[1] / 16384.0f;
-        float az = aceleracao[2] / 16384.0f;
+        ax = aceleracao[0] / 16384.0f; // Escala para 'g'
+        ay = aceleracao[1] / 16384.0f;
+        az = aceleracao[2] / 16384.0f;
         sprintf(str_tmp, "%.1fC", (temp / 340.0) + 36.53); // Converte o valor inteiro de temperatura em string
         sprintf(str_acel_x, "%d", aceleracao[0]);          // Converte aceleração X para string
         sprintf(str_acel_y, "%d", aceleracao[1]);          // Converte aceleração Y para string
         sprintf(str_acel_z, "%d", aceleracao[2]);          // Converte aceleração Z para string
-        sprintf(str_amostras, "%d", amostras);             // Converte amostras para string
-        sprintf(salvando, "%d", captura);             // Converte salvando para string
+        sprintf(salvando, "%d", captura);                  // Converte salvando para string
 
         // Atualiza o conteúdo do display com informações e gráficos
         ssd1306_fill(&ssd, !cor);                            // Limpa o display
@@ -641,9 +662,8 @@ int main()
         ssd1306_line(&ssd, 3, 25, 123, 25, cor);             // Desenha uma linha horizontal
         ssd1306_line(&ssd, 3, 37, 123, 37, cor);             // Desenha outra linha horizontal
         ssd1306_draw_string(&ssd, "Amostras:", 8, 6);        // Escreve texto no display
-        ssd1306_draw_string(&ssd, str_amostras, 30, 6);      // Exibe amostras
-        ssd1306_draw_string(&ssd, "Salvando:", 8, 16);    // Escreve texto no display
-        ssd1306_draw_string(&ssd, salvando, 30, 16);      // Exibe amostras
+        ssd1306_draw_string(&ssd, "Salvando:", 8, 16);       // Escreve texto no display
+        ssd1306_draw_string(&ssd, salvando, 30, 16);         // Exibe amostras
         ssd1306_draw_string(&ssd, "IMU    MPU6050", 10, 28); // Escreve texto no display
         ssd1306_line(&ssd, 63, 25, 63, 60, cor);             // Desenha uma linha vertical
         ssd1306_draw_string(&ssd, str_tmp, 14, 41);          // Exibe temperatura
@@ -684,12 +704,11 @@ int main()
             gpio_put(led_GREEN, false);
             gpio_put(led_BLUE, true);
             ssd1306_fill(&ssd, !cor);                            // Limpa o display
-            ssd1306_draw_string(&ssd, "Salvando amostra", 8, 6); // Escreve texto no display
+            ssd1306_draw_string(&ssd, "Salvando amostras", 8, 6); // Escreve texto no display
             ssd1306_send_data(&ssd);
             capture_adc_data_and_save();
-            amostras = amostras + 1;
             ssd1306_fill(&ssd, !cor);                         // Limpa o display
-            ssd1306_draw_string(&ssd, "Amostra salva", 8, 6); // Escreve texto no display
+            ssd1306_draw_string(&ssd, "Amostras salvas", 8, 6); // Escreve texto no display
             ssd1306_send_data(&ssd);
             sleep_ms(150);
             gpio_put(led_RED, false);
